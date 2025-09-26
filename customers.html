@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>Customers — WMS</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <link rel="stylesheet" href="styles.css" />
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <script src="firebase-init.js"></script>
+  <script src="components.js"></script>
+</head>
+<body>
+  <header id="mainHeader"></header>
+  <aside id="sidebar"></aside>
+  <main>
+    <h2>Customers</h2>
+    <input id="search" placeholder="Search by name, phone, plate"/>
+    <button id="addCustomerBtn" class="primary-btn">Add Customer</button>
+    <table id="customersTable">
+      <thead><tr><th>Name</th><th>Phone</th><th>Vehicles</th><th>Actions</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <!-- Modal for Add/Edit -->
+    <div id="customerModal" class="modal hide">
+      <form id="customerForm" class="card">
+        <input name="name" required placeholder="Name"/>
+        <input name="phone" required placeholder="Mobile"/>
+        <input name="email" placeholder="Email"/>
+        <textarea name="address" placeholder="Address"></textarea>
+        <div id="vehiclesContainer"></div>
+        <button type="button" id="addVehicle" class="secondary-btn">Add Vehicle</button>
+        <button type="submit" class="primary-btn">Save</button>
+        <button type="button" id="closeModal" class="secondary-btn">Cancel</button>
+      </form>
+    </div>
+  </main>
+  <script>
+    let customers = [], editId = null;
+    const tableBody = document.querySelector("#customersTable tbody");
+    const modal = document.getElementById('customerModal');
+    const form = document.getElementById('customerForm');
+    const vehiclesContainer = document.getElementById('vehiclesContainer');
+
+    function renderTable(data) {
+      tableBody.innerHTML = '';
+      data.forEach(c=>{
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${c.name}</td>
+          <td>${c.phone||''}</td>
+          <td>${(c.vehicles||[]).map(v=>`${v.model} (${v.numberPlate})`).join(', ')}</td>
+          <td>
+            <button onclick="viewCustomer('${c.id}')">View</button>
+            <button onclick="editCustomer('${c.id}')">Edit</button>
+            <button onclick="deleteCustomer('${c.id}')">Delete</button>
+          </td>`;
+        tableBody.appendChild(tr);
+      });
+    }
+
+    async function loadCustomers() {
+      const snap = await db.collection('customers').orderBy('createdAt', 'desc').get();
+      customers = snap.docs.map(doc=>({...doc.data(), id:doc.id}));
+      renderTable(customers);
+    }
+
+    document.getElementById('search').addEventListener('input', function() {
+      const val = this.value.trim().toLowerCase();
+      const filtered = customers.filter(c=>
+        c.name.toLowerCase().includes(val) || 
+        (c.phone||'').includes(val) ||
+        (c.vehicles||[]).some(v=>(v.model||'').toLowerCase().includes(val) || (v.numberPlate||'').toLowerCase().includes(val))
+      );
+      renderTable(filtered);
+    });
+
+    document.getElementById('addCustomerBtn').onclick = function() {
+      editId = null;
+      form.reset();
+      vehiclesContainer.innerHTML = '';
+      addVehicleRow();
+      modal.classList.remove('hide');
+    };
+    document.getElementById('closeModal').onclick = ()=> modal.classList.add('hide');
+    document.getElementById('addVehicle').onclick = addVehicleRow;
+
+    function addVehicleRow(model='', numberPlate='') {
+      const idx = vehiclesContainer.children.length;
+      const div = document.createElement('div');
+      div.innerHTML = `
+        <input placeholder="Model" value="${model}" name="model${idx}" style="width: 44%; display:inline-block"/>
+        <input placeholder="Plate" value="${numberPlate}" name="plate${idx}" style="width: 44%; display:inline-block"/>
+        <button type="button" onclick="this.parentNode.remove()">❌</button>`;
+      vehiclesContainer.appendChild(div);
+    }
+
+    form.onsubmit = async function(e) {
+      e.preventDefault();
+      const fd = new FormData(form);
+      const obj = {
+        name: fd.get('name'),
+        phone: fd.get('phone'),
+        email: fd.get('email'),
+        address: fd.get('address'),
+        vehicles: []
+      };
+      for(let i=0; i<vehiclesContainer.children.length; i++) {
+        const child = vehiclesContainer.children[i];
+        const model = child.querySelector('input[placeholder="Model"]').value;
+        const plate = child.querySelector('input[placeholder="Plate"]').value;
+        if(model || plate) obj.vehicles.push({model, numberPlate: plate});
+      }
+      if(editId) {
+        await db.collection('customers').doc(editId).update({...obj, updatedAt:firebase.firestore.FieldValue.serverTimestamp()});
+      } else {
+        await db.collection('customers').add({...obj, createdAt:firebase.firestore.FieldValue.serverTimestamp()});
+      }
+      modal.classList.add('hide');
+      loadCustomers();
+    };
+
+    // Expose for inline button handlers
+    window.viewCustomer = function(id) {
+      location.href = `customer_detail.html?customerId=${id}`;
+    }
+    window.editCustomer = function(id) {
+      editId = id;
+      const c = customers.find(x=>x.id===id);
+      if(!c) return;
+      form.name.value = c.name||'';
+      form.phone.value = c.phone||'';
+      form.email.value = c.email||'';
+      form.address.value = c.address||'';
+      vehiclesContainer.innerHTML = '';
+      (c.vehicles||[]).forEach(v=>addVehicleRow(v.model,v.numberPlate));
+      if ((c.vehicles||[]).length===0) addVehicleRow();
+      modal.classList.remove('hide');
+    }
+    window.deleteCustomer = async function(id) {
+      if(confirm('Delete this customer?')) {
+        await db.collection('customers').doc(id).delete();
+        loadCustomers();
+      }
+    }
+    loadCustomers();
+  </script>
+</body>
+</html>

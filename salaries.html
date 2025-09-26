@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>Salaries & Workers — WMS</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <link rel="stylesheet" href="styles.css" />
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <script src="firebase-init.js"></script>
+  <script src="components.js"></script>
+</head>
+<body>
+  <header id="mainHeader"></header>
+  <aside id="sidebar"></aside>
+  <main>
+    <h2>Workers</h2>
+    <button id="addWorker" class="primary-btn">Add Worker</button>
+    <div id="summary">Total workers: <span id="totWorkers"></span> Paid this month: <span id="paidThisMonth"></span> Remaining: <span id="remaining"></span></div>
+    <table id="workersTable">
+      <thead><tr><th>Name</th><th>Salary</th><th>Actions</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <!-- Modal for Add/Edit Worker -->
+    <div id="workerModal" class="modal hide">
+      <form id="workerForm" class="card">
+        <input name="name" placeholder="Name" required />
+        <input name="phone" placeholder="Phone" />
+        <input name="salary" type="number" placeholder="Monthly Salary" required />
+        <button type="submit" class="primary-btn">Save</button>
+        <button type="button" id="closeWorkerModal" class="secondary-btn">Cancel</button>
+      </form>
+    </div>
+    <!-- Modal for pay salary/bonus/deduction -->
+    <div id="payModal" class="modal hide">
+      <form id="payForm" class="card">
+        <input name="amount" type="number" placeholder="Amount" required />
+        <input name="note" placeholder="Note (optional)" />
+        <select name="type">
+          <option value="salary">Salary</option>
+          <option value="bonus">Bonus</option>
+          <option value="deduction">Deduction</option>
+        </select>
+        <button type="submit" class="primary-btn">Save</button>
+        <button type="button" id="closePayModal" class="secondary-btn">Cancel</button>
+      </form>
+    </div>
+  </main>
+  <script>
+    let workers = [], editId = null, payToId = null;
+    const tableBody = document.querySelector("#workersTable tbody");
+    const modal = document.getElementById('workerModal');
+    const form = document.getElementById('workerForm');
+    const payModal = document.getElementById('payModal');
+    const payForm = document.getElementById('payForm');
+    async function loadWorkers() {
+      const snap = await db.collection('workers').get();
+      workers = snap.docs.map(doc=>({...doc.data(), id:doc.id}));
+      renderTable(workers);
+      document.getElementById('totWorkers').textContent = workers.length;
+      // Salary summary
+      let paid=0, remain=0;
+      const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0,0,0,0);
+      for(const w of workers) {
+        const hSnap = await db.collection('workers').doc(w.id).collection('salaryHistory').where('date','>=',monthStart).get();
+        let totalPaid = 0;
+        hSnap.forEach(d=>{
+          const v = d.data();
+          if(v.type==='salary' || v.type==='bonus') totalPaid += v.amount;
+          else if(v.type==='deduction') totalPaid -= v.amount;
+        });
+        paid += totalPaid;
+        remain += (w.salary||0) - totalPaid;
+      }
+      document.getElementById('paidThisMonth').textContent = paid.toLocaleString('en-IN');
+      document.getElementById('remaining').textContent = remain.toLocaleString('en-IN');
+    }
+    function renderTable(data) {
+      tableBody.innerHTML = '';
+      data.forEach(w=>{
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${w.name||''}</td>
+          <td>₹${w.salary||0}</td>
+          <td>
+            <button onclick="paySalary('${w.id}')">Pay</button>
+            <button onclick="editWorker('${w.id}')">Edit</button>
+            <button onclick="deleteWorker('${w.id}')">Delete</button>
+          </td>`;
+        tableBody.appendChild(tr);
+      });
+    }
+    document.getElementById('addWorker').onclick = function() { editId = null; form.reset(); modal.classList.remove('hide'); };
+    document.getElementById('closeWorkerModal').onclick = ()=>modal.classList.add('hide');
+    form.onsubmit = async function(e) {
+      e.preventDefault();
+      const fd = new FormData(form);
+      const obj = {name:fd.get('name'),phone:fd.get('phone'),salary:Number(fd.get('salary')),createdAt:firebase.firestore.FieldValue.serverTimestamp()};
+      if(editId) await db.collection('workers').doc(editId).update(obj);
+      else await db.collection('workers').add(obj);
+      modal.classList.add('hide'); loadWorkers();
+    };
+    window.editWorker = function(id) {
+      editId = id;
+      const w = workers.find(x=>x.id===id);
+      if(!w) return;
+      form.name.value = w.name||''; form.phone.value = w.phone||''; form.salary.value = w.salary||0;
+      modal.classList.remove('hide');
+    }
+    window.deleteWorker = async function(id) {
+      if(confirm('Delete this worker?')) {
+        await db.collection('workers').doc(id).delete();
+        loadWorkers();
+      }
+    }
+    window.paySalary = function(id) {
+      payToId = id; payForm.reset(); payModal.classList.remove('hide');
+    }
+    document.getElementById('closePayModal').onclick = ()=>payModal.classList.add('hide');
+    payForm.onsubmit = async function(e) {
+      e.preventDefault();
+      const fd = new FormData(payForm);
+      const obj = {amount:Number(fd.get('amount')),note:fd.get('note'),type:fd.get('type'),date:new Date()};
+      await db.collection('workers').doc(payToId).collection('salaryHistory').add(obj);
+      payModal.classList.add('hide'); loadWorkers();
+    };
+    loadWorkers();
+  </script>
+</body>
+</html>

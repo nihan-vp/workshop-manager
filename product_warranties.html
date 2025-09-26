@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>Product Warranties — WMS</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <link rel="stylesheet" href="styles.css" />
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <script src="firebase-init.js"></script>
+  <script src="components.js"></script>
+</head>
+<body>
+  <header id="mainHeader"></header>
+  <aside id="sidebar"></aside>
+  <main>
+    <h2>Product Warranties</h2>
+    <button id="addWarranty" class="primary-btn">Add Product Warranty</button>
+    <table id="warrantiesTable">
+      <thead><tr><th>Product</th><th>Customer</th><th>Expiry</th><th>Status</th><th>Actions</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <!-- Modal for Add/Edit Warranty -->
+    <div id="warrantyModal" class="modal hide">
+      <form id="warrantyForm" class="card">
+        <input name="product" placeholder="Product Name" required />
+        <input name="customer" placeholder="Customer Name" required />
+        <input name="expiryDate" type="date" required />
+        <button type="submit" class="primary-btn">Save</button>
+        <button type="button" id="closeWarrantyModal" class="secondary-btn">Cancel</button>
+      </form>
+    </div>
+  </main>
+  <script>
+    let warranties = [], editId = null;
+    const tableBody = document.querySelector("#warrantiesTable tbody");
+    const modal = document.getElementById('warrantyModal');
+    const form = document.getElementById('warrantyForm');
+    function renderTable(data) {
+      tableBody.innerHTML = '';
+      data.forEach(w=>{
+        const isExpired = (new Date(w.expiryDate) < new Date());
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${w.product}</td>
+          <td>${w.customer}</td>
+          <td>${w.expiryDate}</td>
+          <td>${isExpired?"Expired":"Active"}</td>
+          <td>
+            <button onclick="editWarranty('${w.id}')">Edit</button>
+            <button onclick="deleteWarranty('${w.id}')">Delete</button>
+          </td>`;
+        tableBody.appendChild(tr);
+      });
+    }
+    async function loadWarranties() {
+      const snap = await db.collection('productWarranties').get();
+      warranties = snap.docs.map(doc=>({...doc.data(), id:doc.id}));
+      renderTable(warranties);
+    }
+    document.getElementById('addWarranty').onclick = function() { editId = null; form.reset(); modal.classList.remove('hide'); };
+    document.getElementById('closeWarrantyModal').onclick = ()=> modal.classList.add('hide');
+    form.onsubmit = async function(e) {
+      e.preventDefault();
+      const fd = new FormData(form);
+      const obj = {product:fd.get('product'),customer:fd.get('customer'),expiryDate:fd.get('expiryDate')};
+      if(editId) await db.collection('productWarranties').doc(editId).update(obj);
+      else await db.collection('productWarranties').add(obj);
+      modal.classList.add('hide'); loadWarranties();
+    };
+    window.editWarranty = function(id) {
+      editId = id;
+      const w = warranties.find(x=>x.id===id);
+      if(!w) return;
+      form.product.value = w.product; form.customer.value = w.customer; form.expiryDate.value = w.expiryDate;
+      modal.classList.remove('hide');
+    }
+    window.deleteWarranty = async function(id) {
+      if(confirm('Delete this product warranty?')) {
+        await db.collection('productWarranties').doc(id).delete();
+        loadWarranties();
+      }
+    }
+    loadWarranties();
+  </script>
+</body>
+</html>

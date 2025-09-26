@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>Create Bill — WMS</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <link rel="stylesheet" href="styles.css" />
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <script src="firebase-init.js"></script>
+  <script src="components.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+</head>
+<body>
+  <header id="mainHeader"></header>
+  <aside id="sidebar"></aside>
+  <main>
+    <h2>Create Invoice</h2>
+    <form id="billForm">
+      <select id="customerSelect"></select>
+      <select id="vehicleSelect"></select>
+      <table id="itemsTable">
+        <thead><tr><th>Item</th><th>Qty</th><th>Unit Price</th><th>Tax</th><th>Total</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <button id="addStockItem" type="button" class="secondary-btn">Add from Stock</button>
+      <button id="addManual" type="button" class="secondary-btn">Add Manual Row</button>
+      <label>Labour Charge <input name="labourCharge" type="number" value="0"/></label>
+      <label>Discount <input name="discount" type="number" value="0"/></label>
+      <div>Subtotal: <span id="subtotal"></span></div>
+      <div>Tax: <span id="taxTotal"></span></div>
+      <div>Grand Total: <span id="grandTotal"></span></div>
+      <label>Payment Mode
+        <select id="paymentMode">
+          <option>Cash</option>
+          <option>Online</option>
+          <option>Cash+Online</option>
+        </select>
+      </label>
+      <label>Paid Amount <input id="paidAmount" type="number" value="0"/></label>
+      <div>Remaining: <span id="remainingAmount"></span></div>
+      <button type="submit" class="primary-btn">Save Bill</button>
+      <button id="printBill" type="button" class="secondary-btn">Print / Save PDF</button>
+    </form>
+  </main>
+  <script>
+    let customers=[], vehicles=[], items=[], stockList=[], selectedCustomer={}, selectedVehicle={};
+    const customerSelect = document.getElementById('customerSelect');
+    const vehicleSelect = document.getElementById('vehicleSelect');
+    const itemsTable = document.getElementById('itemsTable').querySelector('tbody');
+    const paidAmountInput = document.getElementById('paidAmount');
+    let subtotal=0, taxTotal=0, grandTotal=0, remaining=0;
+
+    function renderCustomers() {
+      customerSelect.innerHTML = '<option value="">Select Customer</option>' + 
+        customers.map(c=>`<option value="${c.id}">${c.name} (${c.phone})</option>`).join('');
+    }
+    function renderVehicles() {
+      const c = customers.find(x=>x.id===customerSelect.value);
+      vehicleSelect.innerHTML = '<option value="">Select Vehicle</option>' +
+        ((c?.vehicles||[]).map((v,i)=>`<option value="${i}">${v.model} ${v.numberPlate}</option>`).join(''));
+    }
+    function renderItems() {
+      itemsTable.innerHTML = '';
+      items.forEach((item, i)=>{
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td><input value="${item.name}" onchange="updateItem(${i},'name',this.value)" /></td>
+          <td><input type="number" min="1" value="${item.qty}" onchange="updateItem(${i},'qty',this.value)" /></td>
+          <td><input type="number" min="0" value="${item.unitPrice}" onchange="updateItem(${i},'unitPrice',this.value)" /></td>
+          <td><input type="number" min="0" value="${item.tax}" onchange="updateItem(${i},'tax',this.value)" /></td>
+          <td>₹${(item.qty*item.unitPrice*(1+item.tax/100)).toFixed(2)}</td>
+          <td><button type="button" onclick="removeItem(${i})">❌</button></td>`;
+        itemsTable.appendChild(tr);
+      });
+      calcTotals();
+    }
+    window.updateItem = function(i, field, val) {
+      if(field==='qty'||field==='unitPrice'||field==='tax') val=Number(val);
+      items[i][field]=val;
+      renderItems();
+    }
+    window.removeItem = function(i) {
+      items.splice(i,1);
+      renderItems();
+    }
+    function calcTotals() {
+      subtotal = items.reduce((a,b)=>a+b.qty*b.unitPrice,0) + Number(document.querySelector('[name="labourCharge"]').value||0);
+      taxTotal = items.reduce((a,b)=>a+(b.qty*b.unitPrice*b.tax/100),0);
+      const discount = Number(document.querySelector('[name="discount"]').value||0);
+      grandTotal = subtotal + taxTotal - discount;
+      document.getElementById('subtotal').textContent = subtotal.toFixed(2);
+      document.getElementById('taxTotal').textContent = taxTotal.toFixed(2);
+      document.getElementById('grandTotal').textContent = grandTotal.toFixed(2);
+      remaining = grandTotal - Number(paidAmountInput.value||0);
+      document.getElementById('remainingAmount').textContent = remaining.toFixed(2);
+    }
+    document.getElementById('addStockItem').onclick = async function() {
+      if(!stockList.length) stockList = (await db.collection('stock').get()).docs.map(d=>d.data());
+      const name = prompt('Enter Item Code/Name:');
+      const stock = stockList.find(s=>s.code===name||s.name===name) || {};
+      items.push({
+        name: stock.name||name||'',
+        qty: 1, unitPrice: stock.unitPrice||0, tax: stock.tax||0
+      });
+      renderItems();
+    };
+    document.getElementById('addManual').onclick = function() {
+      items.push({name:'',qty:1,unitPrice:0,tax:0});
+      renderItems();
+    };
+    customerSelect.onchange = function() {
+      renderVehicles();
+    }
+    vehicleSelect.onchange = function() {}
+    document.querySelector('[name="labourCharge"]').oninput = calcTotals;
+    document.querySelector('[name="discount"]').oninput = calcTotals;
+    paidAmountInput.oninput = calcTotals;
+
+    document.getElementById('billForm').onsubmit = async function(e) {
+      e.preventDefault();
+      if(!customerSelect.value) return alert('Select customer');
+      if(!vehicleSelect.value) return alert('Select vehicle');
+      if(items.length===0) return alert('Add at least one item');
+      calcTotals();
+      // Save bill
+      const c = customers.find(x=>x.id===customerSelect.value);
+      const v = c.vehicles[vehicleSelect.value];
+      // 1. Save bill
+      const bill = {
+        customerId: c.id,
+        customerName: c.name,
+        customerPhone: c.phone,
+        vehiclePlate: v.numberPlate,
+        items,
+        labourCharge: Number(document.querySelector('[name="labourCharge"]').value||0),
+        subtotal, discount: Number(document.querySelector('[name="discount"]').value||0),
+        taxTotal, grandTotal,
+        paidAmount: Number(paidAmountInput.value||0),
+        remainingAmount: remaining,
+        paymentMode: document.getElementById('paymentMode').value,
+        status: 'active',
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      };
+      const batch = db.batch();
+      const billRef = db.collection('bills').doc();
+      batch.set(billRef, bill);
+      // 2. Update stock
+      for(const it of items) {
+        const stockDoc = (await db.collection('stock').where('name','==',it.name).limit(1).get()).docs[0];
+        if(stockDoc) {
+          const data = stockDoc.data();
+          batch.update(stockDoc.ref, {quantity: data.quantity - it.qty});
+        }
+      }
+      await batch.commit();
+      alert('Saved!');
+      location.href = 'bill_history.html';
+    };
+
+    document.getElementById('printBill').onclick = function() {
+      // Simple printable PDF using jsPDF
+      const doc = new window.jspdf.jsPDF();
+      doc.text('Workshop Bill', 20, 10);
+      doc.text('Customer: ' + (customerSelect.options[customerSelect.selectedIndex]?.text||''), 20, 20);
+      doc.text('Vehicle: ' + (vehicleSelect.options[vehicleSelect.selectedIndex]?.text||''), 20, 27);
+      let y = 35;
+      items.forEach(it=>{
+        doc.text(`${it.name} x${it.qty} ₹${it.unitPrice} Tax:${it.tax}%`, 20, y);
+        y+=7;
+      });
+      doc.text('Subtotal: ₹'+subtotal, 20, y+7);
+      doc.text('Tax: ₹'+taxTotal, 20, y+14);
+      doc.text('Grand Total: ₹'+grandTotal, 20, y+21);
+      doc.text('Paid: ₹'+paidAmountInput.value, 20, y+28);
+      doc.text('Remaining: ₹'+remaining, 20, y+35);
+      doc.save('invoice.pdf');
+    };
+
+    // Load customers
+    async function loadCustomers() {
+      customers = (await db.collection('customers').get()).docs.map(doc=>({...doc.data(), id:doc.id}));
+      renderCustomers();
+    }
+    loadCustomers();
+    renderItems();
+  </script>
+</body>
+</html>

@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>Customer Detail — WMS</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <link rel="stylesheet" href="styles.css" />
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <script src="firebase-init.js"></script>
+  <script src="components.js"></script>
+</head>
+<body>
+  <header id="mainHeader"></header>
+  <aside id="sidebar"></aside>
+  <main>
+    <div id="profileSection"></div>
+    <nav class="tabs">
+      <button data-tab="bills" class="tab-btn active">Bills</button>
+      <button data-tab="warrantyPackages" class="tab-btn">Warranty Packages</button>
+      <button data-tab="productWarranties" class="tab-btn">Product Warranties</button>
+      <button data-tab="visits" class="tab-btn">Visits</button>
+    </nav>
+    <section id="tabContent"></section>
+    <button id="createBill" class="primary-btn">Create New Bill</button>
+  </main>
+  <script>
+    const urlParams = new URLSearchParams(location.search);
+    const customerId = urlParams.get('customerId');
+    let customerObj;
+    async function loadProfile() {
+      const doc = await db.collection('customers').doc(customerId).get();
+      if (!doc.exists) {
+        document.getElementById('profileSection').textContent = 'Not found';
+        return;
+      }
+      customerObj = doc.data();
+      document.getElementById('profileSection').innerHTML = `
+        <h3>${customerObj.name}</h3>
+        <div>Phone: ${customerObj.phone||''}, Email: ${customerObj.email||''}</div>
+        <div>Address: ${customerObj.address||''}</div>
+        <div>Vehicles: ${(customerObj.vehicles||[]).map(v=>`${v.model} (${v.numberPlate})`).join(', ')}</div>
+      `;
+    }
+    async function loadTab(tab) {
+      const tabContent = document.getElementById('tabContent');
+      if(tab==='bills') {
+        const snap = await db.collection('bills').where('customerId','==',customerId).orderBy('createdAt','desc').get();
+        tabContent.innerHTML = `<h4>Bills</h4><ul>`+
+          snap.docs.map(doc=>`<li>
+            <a href="billing.html?billId=${doc.id}">Bill #${doc.id}</a>
+            | Total: ₹${doc.data().grandTotal||0}
+            | Date: ${(doc.data().createdAt?.toDate?.()||'').toLocaleString('en-IN')}
+          </li>`).join('')+`</ul>`;
+      }
+      if(tab==='warrantyPackages') {
+        tabContent.innerHTML = '<em>Warranty package enrollments for this customer.</em>';
+        // TODO: Query warrantyPackages/{packageId}/customers where customerId==this
+      }
+      if(tab==='productWarranties') {
+        tabContent.innerHTML = '<em>Product warranties for this customer.</em>';
+        // TODO: Query productWarranties where customerId==this
+      }
+      if(tab==='visits') {
+        tabContent.innerHTML = '<em>Visits under warranty packages for this customer.</em>';
+        // TODO: Query visits if you track them
+      }
+    }
+    document.querySelectorAll('.tab-btn').forEach(btn=>{
+      btn.onclick = function() {
+        document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+        this.classList.add('active');
+        loadTab(this.dataset.tab);
+      };
+    });
+    document.getElementById('createBill').onclick = ()=>{
+      if(!customerObj) return;
+      location.href = `billing.html?customerId=${customerId}`;
+    };
+    loadProfile().then(()=>loadTab('bills'));
+  </script>
+</body>
+</html>

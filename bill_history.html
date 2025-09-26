@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>Bill History — WMS</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <link rel="stylesheet" href="styles.css" />
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <script src="firebase-init.js"></script>
+  <script src="components.js"></script>
+</head>
+<body>
+  <header id="mainHeader"></header>
+  <aside id="sidebar"></aside>
+  <main>
+    <h2>Bill History</h2>
+    <input id="searchBills" placeholder="Search by name, phone, bill id"/>
+    <label>From <input id="fromDate" type="date"/></label>
+    <label>To <input id="toDate" type="date"/></label>
+    <button id="filterBtn" class="secondary-btn">Filter</button>
+    <table id="billsTable">
+      <thead><tr><th>ID</th><th>Customer</th><th>Date</th><th>Total</th><th>Status</th><th>Actions</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </main>
+  <script>
+    let bills = [];
+    const tableBody = document.querySelector("#billsTable tbody");
+    async function loadBills() {
+      let q = db.collection('bills').orderBy('createdAt','desc');
+      const from = document.getElementById('fromDate').value;
+      const to = document.getElementById('toDate').value;
+      if(from) q = q.where('createdAt', '>=', new Date(from));
+      if(to) q = q.where('createdAt', '<=', new Date((new Date(to)).getTime()+86400000));
+      const snap = await q.get();
+      bills = snap.docs.map(doc=>({...doc.data(), id:doc.id}));
+      renderTable(bills);
+    }
+    function renderTable(data) {
+      tableBody.innerHTML = '';
+      data.forEach(b=>{
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${b.id}</td>
+          <td>${b.customerName||''}</td>
+          <td>${b.createdAt?.toDate?.().toLocaleString('en-IN')||''}</td>
+          <td>₹${b.grandTotal||0}</td>
+          <td>${b.status||''}</td>
+          <td>
+            <button onclick="viewBill('${b.id}')">View</button>
+            <button onclick="printBill('${b.id}')">Print</button>
+            <button onclick="editBill('${b.id}')">Edit</button>
+            <button onclick="cancelBill('${b.id}')">Cancel</button>
+          </td>`;
+        tableBody.appendChild(tr);
+      });
+    }
+    document.getElementById('filterBtn').onclick = loadBills;
+    document.getElementById('searchBills').oninput = function() {
+      const val = this.value.trim().toLowerCase();
+      const filtered = bills.filter(b=>
+        (b.customerName||'').toLowerCase().includes(val) ||
+        (b.customerPhone||'').includes(val) ||
+        (b.id||'').toLowerCase().includes(val)
+      );
+      renderTable(filtered);
+    }
+    window.viewBill = function(id) {
+      window.open(`billing.html?billId=${id}`,'_blank');
+    }
+    window.printBill = async function(id) {
+      // For demo: just open bill page and let user print
+      window.open(`billing.html?billId=${id}&print=1`,'_blank');
+    }
+    window.editBill = function(id) {
+      if(localStorage.getItem('role')!=='admin' && localStorage.getItem('role')!=='manager')
+        return alert('Only admin/manager can edit');
+      window.open(`billing.html?billId=${id}&edit=1`,'_blank');
+    }
+    window.cancelBill = async function(id) {
+      if(localStorage.getItem('role')!=='admin' && localStorage.getItem('role')!=='manager')
+        return alert('Only admin/manager can cancel');
+      if(confirm('Cancel this bill?')) {
+        await db.collection('bills').doc(id).update({status:'cancelled'});
+        loadBills();
+      }
+    }
+    loadBills();
+  </script>
+</body>
+</html>

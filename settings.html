@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>Settings — WMS</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <link rel="stylesheet" href="styles.css" />
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
+  <script src="firebase-init.js"></script>
+  <script src="components.js"></script>
+</head>
+<body>
+  <header id="mainHeader"></header>
+  <aside id="sidebar"></aside>
+  <main>
+    <h2>Workshop Settings</h2>
+    <form id="settingsForm" class="card">
+      <input name="workshopName" placeholder="Workshop Name" />
+      <textarea name="address" placeholder="Address"></textarea>
+      <input name="phone" placeholder="Phone"/>
+      <input name="email" placeholder="Email"/>
+      <input name="gstin" placeholder="GSTIN"/>
+      <input name="lowStockThreshold" type="number" placeholder="Low Stock Threshold"/>
+      <label>Logo <input name="logo" type="file"/></label>
+      <button type="submit" class="primary-btn">Save</button>
+    </form>
+    <h3>Roles</h3>
+    <div id="roleList"></div>
+  </main>
+  <script>
+    let settingsId = null;
+    async function loadSettings() {
+      const snap = await db.collection('settings').limit(1).get();
+      if(snap.empty) return;
+      const doc = snap.docs[0]; settingsId = doc.id;
+      const s = doc.data();
+      const form = document.getElementById('settingsForm');
+      form.workshopName.value = s.workshopName||'';
+      form.address.value = s.address||'';
+      form.phone.value = s.phone||'';
+      form.email.value = s.email||'';
+      form.gstin.value = s.gstin||'';
+      form.lowStockThreshold.value = s.lowStockThreshold||'';
+      loadRoles(s.roles||{admin:[],manager:[],employee:[]});
+    }
+    function loadRoles(roles) {
+      const div = document.getElementById('roleList');
+      div.innerHTML = '';
+      ['admin','manager','employee'].forEach(role=>{
+        div.innerHTML += `<b>${role[0].toUpperCase()+role.slice(1)}:</b> ${(roles[role]||[]).join(', ')}<br>`;
+      });
+    }
+    document.getElementById('settingsForm').onsubmit = async function(e) {
+      e.preventDefault();
+      const fd = new FormData(this);
+      let obj = {
+        workshopName: fd.get('workshopName'), address: fd.get('address'), phone: fd.get('phone'),
+        email: fd.get('email'), gstin: fd.get('gstin'),
+        lowStockThreshold: Number(fd.get('lowStockThreshold'))
+      };
+      const logo = fd.get('logo');
+      if (logo && logo.size) {
+        const ref = storage.ref('logos/' + logo.name);
+        await ref.put(logo);
+        obj.logoURL = await ref.getDownloadURL();
+      }
+      if(settingsId)
+        await db.collection('settings').doc(settingsId).update(obj);
+      else
+        await db.collection('settings').add(obj);
+      alert('Settings saved!');
+      loadSettings();
+    };
+    loadSettings();
+  </script>
+</body>
+</html>

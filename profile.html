@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>Profile — WMS</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <link rel="stylesheet" href="styles.css" />
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <script src="firebase-init.js"></script>
+  <script src="components.js"></script>
+</head>
+<body>
+  <header id="mainHeader"></header>
+  <aside id="sidebar"></aside>
+  <main>
+    <h2>My Profile</h2>
+    <form id="profileForm" class="card">
+      <input name="name" placeholder="Name" />
+      <input name="phone" placeholder="Phone" />
+      <input name="email" placeholder="Email" disabled />
+      <button id="changePassword" type="button" class="secondary-btn">Change Password</button>
+      <button type="submit" class="primary-btn">Save</button>
+    </form>
+    <!-- Modal for change password -->
+    <div id="passwordModal" class="modal hide">
+      <form id="passwordForm" class="card">
+        <input name="oldPassword" type="password" placeholder="Current Password" required />
+        <input name="newPassword" type="password" placeholder="New Password" required />
+        <button type="submit" class="primary-btn">Update Password</button>
+        <button type="button" id="closePasswordModal" class="secondary-btn">Cancel</button>
+      </form>
+    </div>
+  </main>
+  <script>
+    let uid, userDoc;
+    async function loadProfile() {
+      const user = auth.currentUser;
+      if(!user) return;
+      uid = user.uid;
+      document.querySelector('[name="email"]').value = user.email;
+      const snap = await db.collection('users').doc(uid).get();
+      if(snap.exists) {
+        userDoc = snap.data();
+        document.querySelector('[name="name"]').value = userDoc.name||'';
+        document.querySelector('[name="phone"]').value = userDoc.phone||'';
+      }
+    }
+    document.getElementById('profileForm').onsubmit = async function(e) {
+      e.preventDefault();
+      await db.collection('users').doc(uid).update({
+        name: this.name.value, phone: this.phone.value
+      });
+      alert('Profile updated');
+    };
+    document.getElementById('changePassword').onclick = function() {
+      document.getElementById('passwordModal').classList.remove('hide');
+    };
+    document.getElementById('closePasswordModal').onclick = function() {
+      document.getElementById('passwordModal').classList.add('hide');
+    };
+    document.getElementById('passwordForm').onsubmit = async function(e) {
+      e.preventDefault();
+      const oldPass = this.oldPassword.value, newPass = this.newPassword.value;
+      const user = auth.currentUser;
+      const cred = firebase.auth.EmailAuthProvider.credential(user.email, oldPass);
+      try {
+        await user.reauthenticateWithCredential(cred);
+        await user.updatePassword(newPass);
+        alert('Password changed!');
+        document.getElementById('passwordModal').classList.add('hide');
+      } catch(err) { alert('Failed: '+err.message); }
+    };
+    auth.onAuthStateChanged(loadProfile);
+  </script>
+</body>
+</html>

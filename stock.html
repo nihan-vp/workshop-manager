@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>Stock — WMS</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <link rel="stylesheet" href="styles.css" />
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <script src="firebase-init.js"></script>
+  <script src="components.js"></script>
+</head>
+<body>
+  <header id="mainHeader"></header>
+  <aside id="sidebar"></aside>
+  <main>
+    <h2>Stock Items</h2>
+    <button id="addItemBtn" class="primary-btn">Add Item</button>
+    <table id="stockTable">
+      <thead><tr><th>Code</th><th>Name</th><th>Qty</th><th>Unit Price</th><th>Actions</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <!-- Modal for Add/Edit Item -->
+    <div id="stockModal" class="modal hide">
+      <form id="stockForm" class="card">
+        <input name="code" placeholder="Code" required />
+        <input name="name" placeholder="Name" required />
+        <input name="unitPrice" type="number" placeholder="Unit Price" required />
+        <input name="quantity" type="number" placeholder="Quantity" required />
+        <input name="tax" type="number" placeholder="Tax (%)" />
+        <input name="sellerName" placeholder="Seller Name" />
+        <input name="moneyPaid" type="number" placeholder="Payment to Seller" />
+        <button type="submit" class="primary-btn">Save</button>
+        <button type="button" id="closeStockModal" class="secondary-btn">Cancel</button>
+      </form>
+    </div>
+  </main>
+  <script>
+    let stock = [], editId = null, lowStockThreshold = 5;
+    const tableBody = document.querySelector("#stockTable tbody");
+    const modal = document.getElementById('stockModal');
+    const form = document.getElementById('stockForm');
+    async function loadSettings() {
+      const settings = (await db.collection('settings').limit(1).get()).docs[0]?.data();
+      if(settings) lowStockThreshold = settings.lowStockThreshold||5;
+    }
+    async function loadStock() {
+      await loadSettings();
+      const snap = await db.collection('stock').get();
+      stock = snap.docs.map(doc=>({...doc.data(), id:doc.id}));
+      renderTable(stock);
+    }
+    function renderTable(data) {
+      tableBody.innerHTML = '';
+      data.forEach(s=>{
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${s.code||''}</td>
+          <td>${s.name||''}</td>
+          <td>${s.quantity||0}${s.quantity<lowStockThreshold?'<span style="color:red;"> (Low)</span>':''}</td>
+          <td>₹${s.unitPrice||0}</td>
+          <td>
+            <button onclick="editStock('${s.id}')">Edit</button>
+            <button onclick="deleteStock('${s.id}')">Delete</button>
+          </td>`;
+        tableBody.appendChild(tr);
+      });
+    }
+    document.getElementById('addItemBtn').onclick = function() {
+      editId = null; form.reset(); modal.classList.remove('hide');
+    };
+    document.getElementById('closeStockModal').onclick = ()=> modal.classList.add('hide');
+    form.onsubmit = async function(e) {
+      e.preventDefault();
+      const fd = new FormData(form);
+      const obj = {
+        code: fd.get('code'),
+        name: fd.get('name'),
+        unitPrice: Number(fd.get('unitPrice')),
+        quantity: Number(fd.get('quantity')),
+        tax: Number(fd.get('tax')),
+        sellerName: fd.get('sellerName'),
+        moneyPaid: Number(fd.get('moneyPaid')),
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      };
+      obj.lowStockAlert = obj.quantity<lowStockThreshold;
+      if(editId) {
+        await db.collection('stock').doc(editId).update(obj);
+      } else {
+        await db.collection('stock').add(obj);
+      }
+      modal.classList.add('hide');
+      loadStock();
+    };
+    window.editStock = function(id) {
+      editId = id;
+      const s = stock.find(x=>x.id===id);
+      if(!s) return;
+      form.code.value = s.code||'';
+      form.name.value = s.name||'';
+      form.unitPrice.value = s.unitPrice||0;
+      form.quantity.value = s.quantity||0;
+      form.tax.value = s.tax||0;
+      form.sellerName.value = s.sellerName||'';
+      form.moneyPaid.value = s.moneyPaid||0;
+      modal.classList.remove('hide');
+    }
+    window.deleteStock = async function(id) {
+      if(confirm('Delete this stock item?')) {
+        await db.collection('stock').doc(id).delete();
+        loadStock();
+      }
+    }
+    loadStock();
+  </script>
+</body>
+</html>

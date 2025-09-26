@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Dashboard — WMS</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link rel="stylesheet" href="styles.css" />
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <script src="firebase-init.js"></script>
+  <script src="components.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <header id="mainHeader"></header>
+  <aside id="sidebar"></aside>
+  <main>
+    <h2>Key Metrics</h2>
+    <div id="metrics" class="metrics-grid">
+      <div class="metric-card" id="workRemaining">Work remaining: <span></span></div>
+      <div class="metric-card" id="stockRemainder">Low stock items: <span></span></div>
+      <div class="metric-card" id="moneyRemaining">Money to receive: <span></span></div>
+      <div class="metric-card" id="todayRevenue">Today's revenue: <span></span></div>
+      <div class="metric-card" id="monthProfit">This month's profit: <span></span></div>
+    </div>
+    <section>
+      <h3>Revenue (last 30 days)</h3>
+      <canvas id="revenueChart"></canvas>
+    </section>
+    <section>
+      <h3>Expenses by Category</h3>
+      <canvas id="expensePie"></canvas>
+    </section>
+  </main>
+  <script>
+    // Fetch metrics and charts
+    async function fetchMetrics() {
+      // Work remaining = count of bills where remainingAmount > 0 and status == 'active'
+      const billsSnap = await db.collection('bills').where('status', '==', 'active').get();
+      let workCount = 0, moneyRem = 0, todayRev = 0, monthProfit = 0;
+      const today = new Date(); today.setHours(0,0,0,0);
+      const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+      billsSnap.forEach(doc => {
+        const bill = doc.data();
+        if (bill.remainingAmount > 0) workCount++;
+        moneyRem += bill.remainingAmount || 0;
+        const createdAt = bill.createdAt?.toDate?.() || new Date(bill.createdAt);
+        if (createdAt >= today) todayRev += bill.grandTotal || 0;
+        if (createdAt >= monthStart) monthProfit += bill.grandTotal || 0;
+      });
+      document.querySelector('#workRemaining span').textContent = workCount;
+      document.querySelector('#moneyRemaining span').textContent = moneyRem.toLocaleString('en-IN');
+      document.querySelector('#todayRevenue span').textContent = todayRev.toLocaleString('en-IN');
+      document.querySelector('#monthProfit span').textContent = monthProfit.toLocaleString('en-IN');
+      // Low stock
+      const settings = (await db.collection('settings').limit(1).get()).docs[0]?.data() || {lowStockThreshold: 5};
+      const stockSnap = await db.collection('stock').get();
+      let lowStock = 0;
+      stockSnap.forEach(doc => { if (doc.data().quantity < (settings.lowStockThreshold||5)) lowStock++; });
+      document.querySelector('#stockRemainder span').textContent = lowStock;
+    }
+    async function drawCharts() {
+      // Revenue last 30 days
+      let labels = [], values = [];
+      let dt = new Date(); dt.setHours(0,0,0,0); dt.setDate(dt.getDate()-29);
+      let dateArr = [];
+      for(let i=0;i<30;i++) {
+        dateArr.push(new Date(dt));
+        dt.setDate(dt.getDate()+1);
+      }
+      labels = dateArr.map(d=>d.toLocaleDateString('en-IN'));
+      values = Array(30).fill(0);
+      const minDate = dateArr[0];
+      const billsSnap = await db.collection('bills').where('createdAt','>=',minDate).get();
+      billsSnap.forEach(doc=>{
+        const bill = doc.data();
+        const createdAt = bill.createdAt?.toDate?.() || new Date(bill.createdAt);
+        let idx = Math.floor((createdAt-dateArr[0])/(24*3600*1000));
+        if(idx>=0 && idx<30) values[idx] += bill.grandTotal||0;
+      });
+      new Chart(document.getElementById('revenueChart'), {
+        type:'line',
+        data:{labels, datasets:[{label:'Revenue (INR)', data:values, borderColor:'#072F5F'}]},
+        options:{responsive:true}
+      });
+      // Expenses by category
+      const expenseSnap = await db.collection('expenses').get();
+      let cats={}, catLabels=[], catVals=[];
+      expenseSnap.forEach(doc=>{
+        const e = doc.data();
+        cats[e.category] = (cats[e.category]||0)+Number(e.amount||0);
+      });
+      catLabels = Object.keys(cats);
+      catVals = Object.values(cats);
+      new Chart(document.getElementById('expensePie'), {
+        type:'pie',
+        data:{labels:catLabels, datasets:[{data:catVals, backgroundColor:['#072F5F','#1E90FF','#d7263d','#27963C']}]},
+        options:{responsive:true}
+      });
+    }
+    window.addEventListener('DOMContentLoaded', ()=>{
+      fetchMetrics();
+      drawCharts();
+    });
+  </script>
+</body>
+</html>

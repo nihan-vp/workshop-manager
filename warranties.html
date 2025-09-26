@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>Warranty Packages — WMS</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <link rel="stylesheet" href="styles.css" />
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <script src="firebase-init.js"></script>
+  <script src="components.js"></script>
+</head>
+<body>
+  <header id="mainHeader"></header>
+  <aside id="sidebar"></aside>
+  <main>
+    <h2>Warranty Packages</h2>
+    <button id="addPackage" class="primary-btn">Add Package</button>
+    <table id="packagesTable">
+      <thead><tr><th>Name</th><th>Visits</th><th>Expiry (months)</th><th>Actions</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <!-- Modal for Add/Edit Package -->
+    <div id="packageModal" class="modal hide">
+      <form id="packageForm" class="card">
+        <input name="name" placeholder="Package Name" required />
+        <input name="visitsIncluded" type="number" placeholder="Visits Included" required />
+        <input name="expiryMonths" type="number" placeholder="Expiry (months)" required />
+        <button type="submit" class="primary-btn">Save</button>
+        <button type="button" id="closePackageModal" class="secondary-btn">Cancel</button>
+      </form>
+    </div>
+    <!-- Modal for Enrollment -->
+    <div id="enrollModal" class="modal hide">
+      <form id="enrollForm" class="card">
+        <input name="customerId" placeholder="Customer ID" required />
+        <input name="startDate" type="date" required />
+        <button type="submit" class="primary-btn">Enroll</button>
+        <button type="button" id="closeEnrollModal" class="secondary-btn">Cancel</button>
+      </form>
+    </div>
+  </main>
+  <script>
+    let packages = [], editId = null, enrollPkgId = null;
+    const tableBody = document.querySelector("#packagesTable tbody");
+    const modal = document.getElementById('packageModal');
+    const enrollModal = document.getElementById('enrollModal');
+    const form = document.getElementById('packageForm');
+    const enrollForm = document.getElementById('enrollForm');
+    function renderTable(data) {
+      tableBody.innerHTML = '';
+      data.forEach(p=>{
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${p.name}</td>
+          <td>${p.visitsIncluded}</td>
+          <td>${p.expiryMonths}</td>
+          <td>
+            <button onclick="enroll('${p.id}')">Enroll</button>
+            <button onclick="editPackage('${p.id}')">Edit</button>
+            <button onclick="deletePackage('${p.id}')">Delete</button>
+            <button onclick="viewEnrollments('${p.id}')">Enrollments</button>
+          </td>`;
+        tableBody.appendChild(tr);
+      });
+    }
+    async function loadPackages() {
+      const snap = await db.collection('warrantyPackages').get();
+      packages = snap.docs.map(doc=>({...doc.data(), id:doc.id}));
+      renderTable(packages);
+    }
+    document.getElementById('addPackage').onclick = function() { editId = null; form.reset(); modal.classList.remove('hide'); };
+    document.getElementById('closePackageModal').onclick = ()=> modal.classList.add('hide');
+    form.onsubmit = async function(e) {
+      e.preventDefault();
+      const fd = new FormData(form);
+      const obj = {name:fd.get('name'),visitsIncluded:Number(fd.get('visitsIncluded')),expiryMonths:Number(fd.get('expiryMonths'))};
+      if(editId) await db.collection('warrantyPackages').doc(editId).update(obj);
+      else await db.collection('warrantyPackages').add(obj);
+      modal.classList.add('hide'); loadPackages();
+    };
+    window.editPackage = function(id) {
+      editId = id;
+      const p = packages.find(x=>x.id===id);
+      if(!p) return;
+      form.name.value = p.name; form.visitsIncluded.value = p.visitsIncluded; form.expiryMonths.value = p.expiryMonths;
+      modal.classList.remove('hide');
+    }
+    window.deletePackage = async function(id) {
+      if(confirm('Delete this package?')) {
+        await db.collection('warrantyPackages').doc(id).delete();
+        loadPackages();
+      }
+    }
+    window.enroll = function(pkgId) {
+      enrollPkgId = pkgId; enrollForm.reset(); enrollModal.classList.remove('hide');
+    }
+    document.getElementById('closeEnrollModal').onclick = ()=>enrollModal.classList.add('hide');
+    enrollForm.onsubmit = async function(e) {
+      e.preventDefault();
+      const fd = new FormData(enrollForm);
+      const obj = {customerId:fd.get('customerId'),startDate:new Date(fd.get('startDate')),remainingVisits:packages.find(p=>p.id===enrollPkgId).visitsIncluded};
+      await db.collection('warrantyPackages').doc(enrollPkgId).collection('customers').add(obj);
+      enrollModal.classList.add('hide');
+      alert('Enrolled!');
+    };
+    window.viewEnrollments = async function(pkgId) {
+      let snap = await db.collection('warrantyPackages').doc(pkgId).collection('customers').get();
+      alert("Enrollments:\n" + snap.docs.map(d=>"CustomerID: "+d.data().customerId+" Visits left: "+d.data().remainingVisits).join('\n'));
+    }
+    loadPackages();
+  </script>
+</body>
+</html>

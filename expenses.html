@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>Expenses — WMS</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <link rel="stylesheet" href="styles.css" />
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <script src="firebase-init.js"></script>
+  <script src="components.js"></script>
+</head>
+<body>
+  <header id="mainHeader"></header>
+  <aside id="sidebar"></aside>
+  <main>
+    <h2>Expenses</h2>
+    <button id="addExpense" class="primary-btn">Add Expense</button>
+    <table id="expensesTable">
+      <thead><tr><th>Date</th><th>Category</th><th>Amount</th><th>Note</th><th>Actions</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <section id="expenseSummary"></section>
+    <!-- Modal for Add/Edit Expense -->
+    <div id="expenseModal" class="modal hide">
+      <form id="expenseForm" class="card">
+        <input name="date" type="date" required />
+        <input name="category" placeholder="Category" required />
+        <input name="amount" type="number" placeholder="Amount (INR)" required />
+        <textarea name="note" placeholder="Note"></textarea>
+        <button type="submit" class="primary-btn">Save</button>
+        <button type="button" id="closeExpenseModal" class="secondary-btn">Cancel</button>
+      </form>
+    </div>
+  </main>
+  <script>
+    let expenses = [], editId = null;
+    const tableBody = document.querySelector("#expensesTable tbody");
+    const modal = document.getElementById('expenseModal');
+    const form = document.getElementById('expenseForm');
+    function renderTable(data) {
+      tableBody.innerHTML = '';
+      data.forEach(e=>{
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${e.date}</td>
+          <td>${e.category}</td>
+          <td>₹${e.amount||0}</td>
+          <td>${e.note||''}</td>
+          <td>
+            <button onclick="editExpense('${e.id}')">Edit</button>
+            <button onclick="deleteExpense('${e.id}')">Delete</button>
+          </td>`;
+        tableBody.appendChild(tr);
+      });
+      renderSummary(data);
+    }
+    function renderSummary(data) {
+      let total = 0, cats = {};
+      data.forEach(e=>{
+        total += Number(e.amount||0);
+        cats[e.category] = (cats[e.category]||0)+Number(e.amount||0);
+      });
+      document.getElementById('expenseSummary').innerHTML = `
+        <strong>Total: ₹${total}</strong><br>
+        ${Object.entries(cats).map(([k,v])=>`${k}: ₹${v}`).join(', ')}
+      `;
+    }
+    async function loadExpenses() {
+      const snap = await db.collection('expenses').orderBy('date','desc').get();
+      expenses = snap.docs.map(doc=>({...doc.data(), id:doc.id}));
+      renderTable(expenses);
+    }
+    document.getElementById('addExpense').onclick = function() { editId = null; form.reset(); modal.classList.remove('hide'); };
+    document.getElementById('closeExpenseModal').onclick = ()=> modal.classList.add('hide');
+    form.onsubmit = async function(e) {
+      e.preventDefault();
+      const fd = new FormData(form);
+      const obj = {date:fd.get('date'),category:fd.get('category'),amount:Number(fd.get('amount')),note:fd.get('note')};
+      if(editId) await db.collection('expenses').doc(editId).update(obj);
+      else await db.collection('expenses').add(obj);
+      modal.classList.add('hide'); loadExpenses();
+    };
+    window.editExpense = function(id) {
+      editId = id;
+      const e = expenses.find(x=>x.id===id);
+      if(!e) return;
+      form.date.value = e.date; form.category.value = e.category; form.amount.value = e.amount; form.note.value = e.note||'';
+      modal.classList.remove('hide');
+    }
+    window.deleteExpense = async function(id) {
+      if(confirm('Delete this expense?')) {
+        await db.collection('expenses').doc(id).delete();
+        loadExpenses();
+      }
+    }
+    loadExpenses();
+  </script>
+</body>
+</html>
