@@ -1,12 +1,12 @@
 // Paste your Firebase config here
-const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_DOMAIN",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_BUCKET",
-  messagingSenderId: "YOUR_MSG_ID",
-  appId: "YOUR_APP_ID"
-};
+ const firebaseConfig = {
+    apiKey: "AIzaSyCaVDnKbkT0UdfY__3csTB368lWs6TM1Wg",
+    authDomain: "workshop-ms.firebaseapp.com",
+    projectId: "workshop-ms",
+    storageBucket: "workshop-ms.firebasestorage.app",
+    messagingSenderId: "111186300427",
+    appId: "1:111186300427:web:aa9ece4f8745a9ce70c10e",
+  };
 firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 const db = firebase.firestore();
